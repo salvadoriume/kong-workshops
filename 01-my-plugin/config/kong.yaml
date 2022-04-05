@@ -1,0 +1,16 @@
+_format_version: "2.1"
+_transform: true
+
+services:
+- name: my-echoserver
+  url: http://my-echoserver
+  routes:
+  - name: my-route
+    paths:
+    - /my-route
+
+plugins:
+- name: 01-my-plugin
+  config:
+    exit_code: 401
+ 
