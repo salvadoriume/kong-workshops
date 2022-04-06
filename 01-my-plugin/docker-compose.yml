@@ -1,92 +1,73 @@
 version: '3.9'
 
-x-kong-config-env: &kong-env
-  KONG_DATABASE: postgres
-  KONG_PG_DATABASE: kong
-  KONG_PG_HOST: db
-  KONG_PG_USER: kong
-  KONG_PG_PASSWORD_FILE: /run/secrets/kong_postgres_password
-  KONG_PLUGINS: bundled,01-my-plugin
-  KONG_LOG_LEVEL: debug
-  KONG_LUA_PACKAGE_PATH: /usr/local/custom/?.lua;;
-
-x-kong-config-vol: 
-  - &kong-vol
-    type: bind
-    source: "./plugins/01-my-plugin"
-    target: "/usr/local/share/lua/5.1/kong/plugins/01-my-plugin"
-
 services:
   konga:
     image: pantsel/konga:latest
     container_name: my-konga
-    profiles: ["kong"]
+    depends_on: 
+      kong:
+        condition: service_healthy
     ports:
       - 1337:1337
     networks:
       - kong-net
+    env_file:
+      - .envs/konga
     volumes:
       - type: bind
         source: "./konga"
-        target: "/konga/config"
-    environment:
-      KONGA_SEED_USER_DATA_SOURCE_FILE: /konga/config/user_seed.js
-      KONGA_SEED_KONG_NODE_DATA_SOURCE_FILE: /konga/config/node_seed.js
-      NODE_ENV: production
+        target: "/konga-config"
     restart: on-failure
 
   kong-migrations:
-    image: kong:latest
+    image: kong:2.8
     container_name: my-kong-migration
     command: kong migrations bootstrap
-    profiles: ["database"]
+    env_file:
+      - .envs/kong
     depends_on:
       - db
     volumes:
-      - *kong-vol
-    environment:
-      <<: *kong-env
-    secrets:
-      - kong_postgres_password
+      - kong_prefix_vol:/var/run/kong
+      - kong_tmp_vol:/tmp
+      - ./config:/opt/kong
+      - type: bind
+        source: "./plugins/01-my-plugin"
+        target: "/usr/local/share/lua/5.1/kong/plugins/01-my-plugin"
     networks:
       - kong-net
     restart: on-failure
 
   kong-migrations-up:
-    image: kong:latest
+    image: kong:2.8
     container_name: my-kong-migration-up
     command: kong migrations up && kong migrations finish
-    profiles: ["database"]
+    env_file:
+      - .envs/kong
     depends_on:
-      - db
+      kong-migrations:
+        condition: service_completed_successfully
     volumes:
-      - *kong-vol
-    environment:
-      <<: *kong-env
-    secrets:
-      - kong_postgres_password
+      - kong_prefix_vol:/var/run/kong
+      - kong_tmp_vol:/tmp
+      - ./config:/opt/kong
+      - type: bind
+        source: "./plugins/01-my-plugin"
+        target: "/usr/local/share/lua/5.1/kong/plugins/01-my-plugin"
     networks:
       - kong-net
     restart: on-failure
 
   kong:
     platform: linux/arm64
-    image: kong:latest
+    image: kong:2.8
     container_name: my-kong
-    profiles: ["kong"]
     user: kong
-    environment:
-      <<: *kong-env
-      KONG_ADMIN_ACCESS_LOG: /dev/stdout
-      KONG_ADMIN_ERROR_LOG: /dev/stderr
-      KONG_PROXY_LISTEN: 0.0.0.0:8000
-      KONG_ADMIN_LISTEN: 0.0.0.0:8001
-      KONG_PROXY_ACCESS_LOG: /dev/stdout
-      KONG_PROXY_ERROR_LOG: /dev/stderr
-      KONG_PREFIX: /var/run/kong
-      KONG_DECLARATIVE_CONFIG: "/opt/kong/kong.yaml"
-    secrets:
-      - kong_postgres_password
+    env_file:
+      - .envs/kong
+    depends_on:
+      kong-migrations-up:
+        condition: service_completed_successfully
     networks:
       - kong-net
     ports:
@@ -103,20 +84,15 @@ services:
       - kong_prefix_vol:/var/run/kong
       - kong_tmp_vol:/tmp
       - ./config:/opt/kong
-      - *kong-vol
+      - type: bind
+        source: "./plugins/01-my-plugin"
+        target: "/usr/local/share/lua/5.1/kong/plugins/01-my-plugin"
     security_opt:
       - no-new-privileges
 
   db:
     image: postgres:9.5
     container_name: my-postgres
-    profiles: ["database"]
-    environment:
-      POSTGRES_DB: kong
-      POSTGRES_USER: kong
-      POSTGRES_PASSWORD_FILE: /run/secrets/kong_postgres_password
-    secrets:
-      - kong_postgres_password
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "kong"]
       interval: 30s
@@ -124,6 +100,8 @@ services:
       retries: 3
     restart: on-failure
     stdin_open: true
+    env_file:
+      - .envs/postgres
     tty: true
     ports:
       - 5432:5432
@@ -135,20 +113,13 @@ services:
   echoserver:
     image: ealen/echo-server:latest
     container_name: my-echoserver
-    profiles: ["kong"]
     logging:
       driver: none
-    environment:
-      - ENABLE_ENVIRONMENT=false
     networks:
       - kong-net
     depends_on:
       kong:
         condition: service_healthy
-
-secrets:
-  kong_postgres_password:
-    file: ./POSTGRES_PASSWORD
 
 volumes:
   kong_data: {}
