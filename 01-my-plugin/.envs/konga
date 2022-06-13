@@ -1,0 +1,3 @@
+KONGA_SEED_USER_DATA_SOURCE_FILE="/konga-config/user_seed.js"
+KONGA_SEED_KONG_NODE_DATA_SOURCE_FILE="/konga-config/node_seed.js"
+NODE_ENV="production"

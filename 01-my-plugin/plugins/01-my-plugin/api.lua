@@ -1,5 +1,5 @@
 return {
-  ["/my-plugin-ping"] = {
+  ["/my-plugin/ping"] = {
       GET = function(self)
         return kong.response.exit(200, "PONG")
       end
